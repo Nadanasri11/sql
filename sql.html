@@ -1,0 +1,167 @@
+-- Create a database
+CREATE DATABASE ArtGallery;
+USE ArtGallery;
+
+-- Table for Artists
+CREATE TABLE Artists (
+    ArtistID INT PRIMARY KEY AUTO_INCREMENT,
+    Name VARCHAR(255) NOT NULL,
+    Age INT,
+    Birthplace VARCHAR(255),
+    StyleOfWork VARCHAR(255)
+);
+
+-- Table for Artworks
+CREATE TABLE Artworks (
+    ArtworkID INT PRIMARY KEY AUTO_INCREMENT,
+    ArtistID INT,
+    YearOfMaking YEAR,
+    Title VARCHAR(255) UNIQUE NOT NULL,
+    StyleOfArt VARCHAR(255),
+    Price DECIMAL(10, 2),
+    FOREIGN KEY (ArtistID) REFERENCES Artists(ArtistID)
+);
+
+-- Table for Customers
+CREATE TABLE Customers (
+    CustomerID INT PRIMARY KEY AUTO_INCREMENT,
+    Name VARCHAR(255) NOT NULL,
+    Address VARCHAR(255),
+    AmountSpent DECIMAL(10, 2) DEFAULT 0.00,
+    LikingAndInterests TEXT
+);
+
+-- Table for Exhibitions
+CREATE TABLE Exhibitions (
+    ExhibitionID INT PRIMARY KEY AUTO_INCREMENT,
+    Name VARCHAR(255) NOT NULL,
+    StartDate DATE,
+    EndDate DATE,
+    Location VARCHAR(255)
+);
+
+-- Table for Exhibition Artworks 
+CREATE TABLE ExhibitionArtworks (
+    ExhibitionID INT NOT NULL,
+    ArtworkID INT NOT NULL,
+    PRIMARY KEY (ExhibitionID, ArtworkID),
+    FOREIGN KEY (ExhibitionID) REFERENCES Exhibitions(ExhibitionID),
+    FOREIGN KEY (ArtworkID) REFERENCES Artworks(ArtworkID)
+);
+
+
+-- Table for Sales (Captures information about which customer bought which artwork)
+CREATE TABLE Sales (
+    SaleID INT PRIMARY KEY AUTO_INCREMENT,
+    CustomerID INT,
+    ArtworkID INT,
+    SaleDate DATE,
+    Amount DECIMAL(10, 2),
+    FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID),
+    FOREIGN KEY (ArtworkID) REFERENCES Artworks(ArtworkID)
+);
+
+-- Function to calculate the total amount spent by a customer
+DELIMITER $$
+CREATE FUNCTION CalculateTotalSpent(customerID INT) RETURNS DECIMAL(10,2)
+BEGIN
+    DECLARE total DECIMAL(10,2);
+    SELECT COALESCE(SUM(Amount), 0) INTO total FROM Sales WHERE CustomerID = customerID;
+    RETURN total;
+END$$
+DELIMITER ;
+
+-- Procedure to update the total amount spent by a customer
+DELIMITER $$
+CREATE PROCEDURE UpdateCustomerSpending(customerID INT)
+BEGIN
+    DECLARE totalSpent DECIMAL(10,2);
+    SET totalSpent = CalculateTotalSpent(customerID);
+    UPDATE Customers SET AmountSpent = totalSpent WHERE CustomerID = customerID;
+END$$
+DELIMITER ;
+
+-- Trigger to automatically update the amount spent by a customer after a sale
+DELIMITER $$
+CREATE TRIGGER AfterSaleInsert
+AFTER INSERT ON Sales
+FOR EACH ROW
+BEGIN
+    CALL UpdateCustomerSpending(NEW.CustomerID);
+END$$
+DELIMITER ;
+
+-- Sample Insert Statements
+INSERT INTO Artists (Name, Age, Birthplace, StyleOfWork) 
+VALUES ('Pablo Picasso', 91, 'Malaga, Spain', 'Cubism'), 
+       ('Vincent van Gogh', 37, 'Zundert, Netherlands', 'Post-Impressionism'),
+       ('Leonardo da Vinci', 67, 'Vinci, Italy', 'Renaissance');
+
+INSERT INTO Artworks (ArtistID, YearOfMaking, Title, StyleOfArt, Price) 
+VALUES (1, 1907, 'Les Demoiselles d\'Avignon', 'Cubism', 1000000.00),
+       (2, 1889, 'Starry Night', 'Post-Impressionism', 2000000.00),
+       (3, 1503, 'Mona Lisa', 'Renaissance', 850000000.00);
+
+INSERT INTO Customers (Name, Address, LikingAndInterests) 
+VALUES ('John Doe', '123 Main St', 'Renaissance, Impressionism'),
+       ('Jane Smith', '456 Oak St', 'Cubism, Surrealism');
+
+INSERT INTO Exhibitions (Name, StartDate, EndDate, Location) 
+VALUES ('Modern Masters', '2023-08-01', '2023-09-01', 'New York'),
+       ('Renaissance Art', '2023-10-15', '2023-11-15', 'Florence');
+
+INSERT INTO ExhibitionArtworks (ExhibitionID, ArtworkID) 
+VALUES (1, 1),
+       (2, 3);
+
+INSERT INTO Sales (CustomerID, ArtworkID, SaleDate, Amount) 
+VALUES (1, 3, '2023-11-01', 850000000.00),
+       (2, 1, '2023-08-15', 1000000.00);
+
+-- Complex Queries and Operations
+
+-- Query to get total sales for a specific artist
+SELECT ar.Name AS ArtistName, SUM(s.Amount) AS TotalSales
+FROM Sales s
+JOIN Artworks aw ON s.ArtworkID = aw.ArtworkID
+JOIN Artists ar ON aw.ArtistID = ar.ArtistID
+WHERE ar.Name = 'Pablo Picasso'
+GROUP BY ar.Name;
+
+-- Query to find the most popular artist by sales
+SELECT ar.Name AS ArtistName, SUM(s.Amount) AS TotalSales
+FROM Sales s
+JOIN Artworks aw ON s.ArtworkID = aw.ArtworkID
+JOIN Artists ar ON aw.ArtistID = ar.ArtistID
+GROUP BY ar.Name
+ORDER BY TotalSales DESC
+LIMIT 1;
+
+-- Query to get artworks sold in a specific exhibition
+SELECT ex.Name AS ExhibitionName, aw.Title AS ArtworkTitle, s.Amount AS SaleAmount
+FROM Sales s
+JOIN Artworks aw ON s.ArtworkID = aw.ArtworkID
+JOIN ExhibitionArtworks ea ON aw.ArtworkID = ea.ArtworkID
+JOIN Exhibitions ex ON ea.ExhibitionID = ex.ExhibitionID
+WHERE ex.Name = 'Modern Masters';
+
+-- Query to get the total revenue generated from all sales
+SELECT SUM(Amount) AS TotalRevenue FROM Sales;
+
+-- Query to get a list of customers and their total amount spent
+SELECT c.Name AS CustomerName, c.AmountSpent AS TotalSpent
+FROM Customers c
+ORDER BY c.AmountSpent DESC;
+
+-- Query to find the most expensive artwork sold
+SELECT aw.Title AS ArtworkTitle, s.Amount AS SalePrice
+FROM Sales s
+JOIN Artworks aw ON s.ArtworkID = aw.ArtworkID
+ORDER BY s.Amount DESC
+LIMIT 1;
+
+-- Query to find all artworks that have not been sold
+SELECT aw.Title AS UnsoldArtworks
+FROM Artworks aw
+LEFT JOIN Sales s ON aw.ArtworkID = s.ArtworkID
+WHERE s.ArtworkID IS NULL;
